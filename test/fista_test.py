@@ -1,6 +1,6 @@
 import unittest
 import torch
-from ..autoencoders.fista import Fista
+from autoencoders.fista import FunctionalFista
 
 
 class TestFistaLoss(unittest.TestCase):
@@ -12,7 +12,7 @@ class TestFistaLoss(unittest.TestCase):
         l1_alpha = 0.1
         device = torch.device('cpu')
 
-        self.params, self.buffers = Fista.init(
+        self.params, self.buffers = FunctionalFista.init(
             activation_size,
             n_dict_components,
             l1_alpha,
@@ -25,13 +25,13 @@ class TestFistaLoss(unittest.TestCase):
 
 
     def test_loss(self):
-        actual_loss, (loss_data, aux_data) = Fista.loss(self.params, self.buffers, self.batch)
+        actual_loss, (loss_data, aux_data) = FunctionalFista.loss(self.params, self.buffers, self.batch)
         print(actual_loss, loss_data, aux_data["c"].shape)
         self.assertIsInstance(actual_loss, torch.Tensor)
 
 
     def test_fista_loss(self):
-        actual_loss, (loss_data, aux_data) = Fista.fista_loss(self.params, self.buffers, self.batch, self.coefficients)
+        actual_loss, (loss_data, aux_data) = FunctionalFista.fista_loss(self.params, self.buffers, self.batch, self.coefficients)
         print(actual_loss, loss_data, aux_data["c_fista"].shape)
         self.assertIsInstance(actual_loss, torch.Tensor)
 
