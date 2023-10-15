@@ -10,7 +10,7 @@ from autoencoders.learned_dict import (LearnedDict, ReverseSAE, TiedSAE,
                                        UntiedSAE)
 from autoencoders.ensemble import DictSignature
 from autoencoders.learned_dict import LearnedDict
-# function that writes a thing (its cool):
+
 
 _n_samples, _activation_size = None, None
 
@@ -52,8 +52,9 @@ class FunctionalFista(DictSignature):
         nn.init.zeros_(params["encoder_bias"])
 
         buffers["l1_alpha"] = torch.tensor(l1_alpha, device=device, dtype=dtype)
+        buffers["bias_decay"] = torch.tensor(bias_decay, device=device, dtype=dtype)
 
-        buffers["device"] = device
+        buffers["hessian_diag"] = torch.zeros(n_dict_components).to(device)
 
         return params, buffers
 
@@ -72,10 +73,41 @@ class FunctionalFista(DictSignature):
     def uncenter(buffers, batch):
         return torch.einsum("cu,bc->bu", buffers["center_rot"], batch / buffers["center_scale"][None, :]) + buffers[
                                                                                                                 "center_trans"][
+
                                                                                                             None, :]
 
     @staticmethod
     def loss(params, buffers, batch):
+        decoder_norms = torch.norm(params["encoder"], 2, dim=-1)
+        learned_dict = params["encoder"] / torch.clamp(decoder_norms, 1e-8)[:, None]
+
+        batch_centered = FunctionalFista.center(buffers, batch)
+
+        c = torch.einsum("nd,bd->bn", learned_dict, batch_centered)
+        c = c + params["encoder_bias"]
+        c = torch.clamp(c, min=0.0)
+
+        x_hat_centered = torch.einsum("nd,bn->bd", learned_dict, c)
+        x_hat = FunctionalFista.uncenter(buffers, x_hat_centered)
+        l_reconstruction = (x_hat_centered - batch_centered).pow(2).mean()
+        l_l1 = buffers["l1_alpha"] * torch.norm(c, 1, dim=-1).mean()
+        l_bias_decay = buffers["bias_decay"] * torch.norm(params["encoder_bias"], 2)
+
+        loss_data = {
+            "loss": l_reconstruction + l_l1 + l_bias_decay,
+            "l_reconstruction": l_reconstruction,
+            "l_l1": l_l1,
+        }
+
+        aux_data = {
+            "c": c,
+        }
+
+        return l_reconstruction + l_l1 + l_bias_decay, (loss_data, aux_data)
+
+
+    @staticmethod
+    def loss2(params, buffers, batch):
         decoder_norms = torch.norm(params["encoder"], 2, dim=-1)
         learned_dict = params["encoder"] / torch.clamp(decoder_norms, 1e-8)[:, None]
         batch_centered = FunctionalFista.center(buffers, batch)
@@ -91,36 +123,62 @@ class FunctionalFista(DictSignature):
         l_l1 = buffers["l1_alpha"] * torch.norm(c, 1, dim=-1).mean()
         l_bias_decay = buffers["bias_decay"] * torch.norm(params["encoder_bias"], 2)
 
-        #Fista component
-        c_fista, res = FunctionalFista.fista(batch_centered, learned_dict, buffers["l1_alpha"], c, 50, buffers["device"], eta=None)
-        l_reconstruction_fista = res.pow(2).mean()
-
-        overall_reconstruction = l_reconstruction + l_reconstruction_fista
+        # with torch.no_grad():
+        FunctionalFista.dictionary_update(params, buffers, batch_centered, c, learned_dict)
+        # coeffs_fista, res = FunctionalFista.fista(batch_centered, learned_dict, buffers["l1_alpha"], c, 50, params["encoder"].device,
+        #                                           eta=None)
 
         loss_data = {
-            "loss": overall_reconstruction + l_l1 + l_bias_decay,
-            "autoencoder_reconstruction": l_reconstruction,
-            "fista_reconstruction": l_reconstruction_fista,
+            "loss": l_reconstruction + l_l1 + l_bias_decay,
+            "l_reconstruction": l_reconstruction,
             "l_l1": l_l1,
         }
-
         aux_data = {
             "c": c,
-            "c_fista": c_fista,
         }
+        return l_reconstruction + l_l1 + l_bias_decay, (loss_data, aux_data)
 
-        return overall_reconstruction + l_l1 + l_bias_decay, (loss_data, aux_data)
+    @staticmethod
+    def dictionary_update(params, buffers, batch_centered, coeffs, learned_dict):
+        device = params["encoder"].device
+        coeffs_fista, res = FunctionalFista.fista(batch_centered, learned_dict, buffers["l1_alpha"], coeffs, 1, device, eta=None)
+        ACT_HISTORY_LEN = 300
+        buffers["hessian_diag"] = buffers["hessian_diag"].mul((ACT_HISTORY_LEN - 1.0) / ACT_HISTORY_LEN ) + torch.pow(coeffs_fista, 2).mean(0) / ACT_HISTORY_LEN
 
+        return FunctionalFista.quadraticBasisUpdate(learned_dict, res, coeffs_fista, 0.001, buffers["hessian_diag"])
+
+
+
+
+        # #Fista component of loss function
+        # c_fista, res = FunctionalFista.fista(batch_centered, learned_dict, buffers["l1_alpha"], c, 50, device, eta=None)
+        # l_reconstruction_fista = res.pow(2).mean()
+        #
+        # overall_reconstruction = l_reconstruction + l_reconstruction_fista
+        #
+        # loss_data = {
+        #     "loss": overall_reconstruction + l_l1 + l_bias_decay,
+        #     "autoencoder_reconstruction": l_reconstruction,
+        #     "fista_reconstruction": l_reconstruction_fista,
+        #     "l_l1": l_l1,
+        # }
+        #
+        # aux_data = {
+        #     "c": c,
+        #     "c_fista": c_fista,
+        # }
+        #
+        # return overall_reconstruction + l_l1 + l_bias_decay, (loss_data, aux_data)
 
     @staticmethod
     def fista_loss(params, buffers, batch, c):
         decoder_norms = torch.norm(params["encoder"], 2, dim=-1)
         learned_dict = params["encoder"] / torch.clamp(decoder_norms, 1e-8)[:, None]
-
         batch_centered = Fista.center(buffers, batch)
+        device = params["encoder"].device
         #batch_centered.shape = (batch_size, activation_size)
 
-        c_fista, res = FunctionalFista.fista(batch_centered, learned_dict, buffers["l1_alpha"], c, 50, buffers["device"], eta=None)
+        c_fista, res = FunctionalFista.fista(batch_centered, learned_dict, buffers["l1_alpha"], c, 50, device, eta=None)
         l_reconstruction = res.pow(2).mean()
 
         return l_reconstruction, ({"loss": l_reconstruction}, {"c_fista": c_fista})
@@ -128,21 +186,19 @@ class FunctionalFista(DictSignature):
     @staticmethod
     def fista(batch, learned_dict, l1_coef, coefficients, num_iter, device, eta=None):
         # shapes: batch = (b_size, h_dim), learned_dict = (dict_size, h_dim), coefficients = (b_size, dict_size)
-
+        dtype = batch.dtype
         # batch_size = batch.size(0)
         # M = learned_dict.size(0)
         if eta is None:
             eigenvalues = torch.linalg.eigvalsh(learned_dict @ learned_dict.T)
-            eta = 1.0 / eigenvalues.max().item()
-            eta = torch.tensor(eta, dtype=torch.float32).to(device)
+            eta = 1.0 / eigenvalues.max().to(dtype)
+        # eta = torch.tensor(eta, dtype=torch.float32).to(device)
 
         tk_n = 1.
         tk = 1.
-        # Res = torch.FloatTensor(I.size()).fill_(0).to(cfg.device)
 
-        # ahat = torch.FloatTensor(M,batch_size).fill_(0).to(cfg.device)
-        # ahat_y = torch.FloatTensor(M,batch_size).fill_(0).to(cfg.device)
         ahat = coefficients
+        # print("ahat dtype 1:", ahat.dtype)
         ahat_y = coefficients
 
         for t in range(num_iter):
@@ -153,9 +209,22 @@ class FunctionalFista(DictSignature):
             ahat_y = ahat_y.add(eta * torch.mm(Res, learned_dict.t()))
             ahat = ahat_y.sub(eta * l1_coef).clamp(min=0.)
             ahat_y = ahat.add(ahat.sub(ahat_pre).mul((tk - 1) / (tk_n)))
+            # should probably figure out what changes ahat's dtype instead of just changing it here but whatever
+            ahat = ahat.to(dtype)
         Res = batch - torch.mm(ahat, learned_dict)
+        # Res is the residual, the difference between reconstructed and original data. ahat is the coefficients.
         return ahat, Res
 
+
+    @staticmethod
+    def quadraticBasisUpdate(learned_dict, Res, ahat, lowestActivation, HessianDiag, stepSize = 0.001, Noneg = False):
+        dBasis = stepSize * torch.mm(Res.t(), ahat) / ahat.size(0)
+        dBasis = dBasis / (HessianDiag + lowestActivation)
+        learned_dict = learned_dict + (dBasis.t())
+        if Noneg:
+            learned_dict = learned_dict.clamp(min=0.)
+        learned_dict = learned_dict / (learned_dict.norm(2, 0))
+        return learned_dict
 
 class Fista(LearnedDict):
     def __init__(self, encoder, encoder_bias, centering=(None, None, None), norm_encoder=False):
@@ -230,8 +299,7 @@ class Fista(LearnedDict):
         # M = learned_dict.size(0)
         if eta is None:
             eigenvalues = torch.linalg.eigvalsh(learned_dict @ learned_dict.T)
-            eta = 1.0 / eigenvalues.max().item()
-            eta = torch.tensor(eta, dtype=torch.float32).to(device)
+            eta = 1.0 / eigenvalues.max()
 
         tk_n = 1.
         tk = 1.

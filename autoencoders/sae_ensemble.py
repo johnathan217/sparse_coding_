@@ -59,7 +59,6 @@ class FunctionalSAE(DictSignature):
         learned_dict = params["decoder"] / torch.clamp(decoder_norms, 1e-8)[:, None]
 
         x_hat = torch.einsum("nd,bn->bd", learned_dict, c)
-
         l_reconstruction = (x_hat - batch).pow(2).mean()
         l_l1 = buffers["l1_alpha"] * torch.norm(c, 1, dim=-1).mean()
         l_bias_decay = buffers["bias_decay"] * torch.norm(params["encoder_bias"], 2)
@@ -115,7 +114,7 @@ class FunctionalTiedSAE(DictSignature):
         nn.init.zeros_(params["encoder_bias"])
 
         buffers["l1_alpha"] = torch.tensor(l1_alpha, device=device, dtype=dtype)
-        
+        buffers["bias_decay"] = torch.tensor(bias_decay, device=device, dtype=dtype)
 
         return params, buffers
 
@@ -144,7 +143,6 @@ class FunctionalTiedSAE(DictSignature):
 
         x_hat_centered = torch.einsum("nd,bn->bd", learned_dict, c)
         x_hat = FunctionalTiedSAE.uncenter(buffers, x_hat_centered)
-
         l_reconstruction = (x_hat_centered - batch_centered).pow(2).mean()
         l_l1 = buffers["l1_alpha"] * torch.norm(c, 1, dim=-1).mean()
         l_bias_decay = buffers["bias_decay"] * torch.norm(params["encoder_bias"], 2)

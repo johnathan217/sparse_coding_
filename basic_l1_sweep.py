@@ -9,6 +9,7 @@ import numpy as np
 
 from autoencoders.sae_ensemble import FunctionalTiedSAE
 from autoencoders.ensemble import FunctionalEnsemble
+from autoencoders.fista import FunctionalFista
 from big_sweep import ensemble_train_loop, unstacked_to_learned_dicts
 from config import TrainArgs, EnsembleArgs
 
@@ -44,11 +45,12 @@ class ProgressBar:
         self._value = v
 
 def basic_l1_sweep(
+    dtype,
     dataset_dir, output_dir,
-    ratio, l1_values=np.logspace(-4, -2, 16), batch_size=256,
+    ratio, l1_values=np.logspace(-4, -2, 16), batch_size=128,
     device="cuda", adam_kwargs={"lr": 1e-3},
     n_repetitions=1,
-    save_after_every=False, 
+    save_after_every=False,
 ):
     # get dataset size
     
@@ -89,7 +91,7 @@ def basic_l1_sweep(
         for chunk_idx, chunk in enumerate(chunk_order):
             assert os.path.exists(os.path.join(dataset_dir, '{}.pt'.format(chunk))), "Chunk not found at {}".format(os.path.join(dataset_dir, '{}.pt'.format(chunk)))
             dataset = torch.load(os.path.join(dataset_dir, '{}.pt'.format(chunk))).to(dtype=torch.float32)
-            dataset.pin_memory()
+            # dataset.pin_memory()
 
             sampler = torch.utils.data.BatchSampler(
                 torch.utils.data.RandomSampler(range(dataset.shape[0])),
@@ -102,7 +104,7 @@ def basic_l1_sweep(
             cfg = TrainArgs()
             cfg.use_wandb = False
 
-            ensemble_train_loop(ensemble, cfg, args, "ensemble", sampler, dataset, bar)
+            ensemble_train_loop(ensemble, cfg, args, "ensemble", sampler, dataset, bar, dtype)
 
             if save_after_every:
                 learned_dicts = unstacked_to_learned_dicts(ensemble, args, ["dict_size"], ["l1_alpha"])
@@ -117,11 +119,11 @@ def basic_l1_sweep(
 
 @dataclass
 class SweepArgs(EnsembleArgs):
-    dataset_dir: str = "data"
-    output_dir: str = "sweep_outputs"
+    dataset_dir: str = "activation_data/layer_2"
+    output_dir: str = "output_basic_test/normal_13_10_2023_iterative_set"
     l1_value_min: float = -4
     l1_value_max: float = -2
-    l1_value_n: int = 16
+    l1_value_n: int = 8
     ratio: float = 1.0
     n_repetitions: int = 1
     save_after_every: bool = False
@@ -135,6 +137,7 @@ if __name__ == "__main__":
     l1_values = np.logspace(args.l1_value_min, args.l1_value_max, args.l1_value_n)
 
     basic_l1_sweep(
+        args.dtype,
         args.dataset_dir, args.output_dir,
         args.ratio, l1_values, args.batch_size,
         args.device, {"lr": args.adam_lr},

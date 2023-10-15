@@ -19,10 +19,11 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 import standard_metrics
 from autoencoders.learned_dict import LearnedDict
 from autoencoders.pca import BatchedPCA, PCAEncoder
+from autoencoders.fista import FunctionalFista, Fista
 
-load_dir = "/mnt/ssd-cluster/bigrun0308"
-plot_data_dir = "/mnt/ssd-cluster/plot_data"
-plot_dir = "/mnt/ssd-cluster/plots"
+load_dir = "D:/sparse_coding_/output_basic_test/normal"
+plot_data_dir = "D:/sparse_coding_/output_basic_test/normal_analysis/plot_data"
+plot_dir = "D:/sparse_coding_/output_basic_test/normal_analysis/plots"
 
 
 def plot_by_group() -> None:

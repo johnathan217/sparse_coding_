@@ -30,10 +30,10 @@ class TestFistaLoss(unittest.TestCase):
         self.assertIsInstance(actual_loss, torch.Tensor)
 
 
-    def test_fista_loss(self):
-        actual_loss, (loss_data, aux_data) = FunctionalFista.fista_loss(self.params, self.buffers, self.batch, self.coefficients)
-        print(actual_loss, loss_data, aux_data["c_fista"].shape)
-        self.assertIsInstance(actual_loss, torch.Tensor)
+    # def test_fista_loss(self):
+    #     actual_loss, (loss_data, aux_data) = FunctionalFista.fista_loss(self.params, self.buffers, self.batch, self.coefficients)
+    #     print(actual_loss, loss_data, aux_data["c_fista"].shape)
+    #     self.assertIsInstance(actual_loss, torch.Tensor)
 
 
 

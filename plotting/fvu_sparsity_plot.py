@@ -369,7 +369,7 @@ if __name__ == "__main__":
         title = "FVU Top-2 vs FVU Rest"
         filename = "fvu_top"
 
-        dataset_file = "activation_data_sphere/0.pt"
+        dataset_file = "D:/sparse_coding_/activation_data/layer_2/0.pt"
 
         scores = generate_scores(files, dataset_file, y_score="top_fvu", group_by="dict_size", device=device)
 

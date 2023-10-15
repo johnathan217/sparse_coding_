@@ -361,7 +361,7 @@ def make_activation_dataset_hf(
             datasets: Dict[int, List] = {layer: [] for layer in layers}
             for batch_idx, batch in tqdm(enumerate(dataset_iterator)):
                 batch = batch["input_ids"].to(device)
-                _, cache = model.run_with_cache(batch, stop_at_layer=max(layers) + 1)
+                _, cache = model.run_with_cache(batch, stop_at_layer=int(max(layers)) + 1)
                 for layer in layers:
                     tensor_name = make_tensor_name(layer, tensor_loc, model.cfg.model_name)
                     activation_data = cache[tensor_name].to(torch.float16)

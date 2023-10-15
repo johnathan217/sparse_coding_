@@ -21,6 +21,7 @@ import wandb
 from activation_dataset import (check_transformerlens_model,
                                 get_activation_size, setup_data)
 from autoencoders.learned_dict import LearnedDict, TiedSAE, UntiedSAE
+from autoencoders.fista import FunctionalFista
 from cluster_runs import dispatch_job_on_chunk
 from sc_datasets.random_dataset import SparseMixDataset
 
@@ -156,7 +157,8 @@ def log_standard_metrics(learned_dicts, chunk, chunk_num, hyperparam_ranges, cfg
             cfg.wandb_instance.log({f"sparsity_hist_{chunk_num}/{k}": wandb.Image(plot)})
 
 
-def ensemble_train_loop(ensemble, cfg, args, ensemble_name, sampler, dataset, progress_counter):
+
+def ensemble_train_loop(ensemble, cfg, args, ensemble_name, sampler, dataset, progress_counter, dtype):
     torch.set_grad_enabled(False)
     torch.manual_seed(0)
     np.random.seed(0)
@@ -166,9 +168,27 @@ def ensemble_train_loop(ensemble, cfg, args, ensemble_name, sampler, dataset, pr
 
     for i, batch_idxs in enumerate(sampler):
         batch = dataset[batch_idxs].to(args["device"])
-        losses, aux_buffer = ensemble.step_batch(batch)
 
-        num_nonzero = aux_buffer["c"].count_nonzero(dim=-1).float().mean(dim=-1)
+        losses, aux_buffer = ensemble.step_batch(batch)
+        # Do fista optimisation here
+        # params = ensemble.params
+        # buffers = ensemble.buffers
+        # c = aux_buffer["c"].squeeze(0).to(dtype)
+        # decoder_norms = torch.norm(params["encoder"], 2, dim=-1)
+        # learned_dict = params["encoder"] / torch.clamp(decoder_norms, 1e-8)[:, None]
+        # learned_dict = learned_dict.squeeze(0).to(dtype)
+        # newdicts = []
+        # params = separate_tensors(params, c.size(0))
+        # buffers = separate_tensors(buffers, c.size(0))
+        # for j in range(c.size(0)):
+        #     c2 = c[j]
+        #     learned_dict2 = learned_dict[j]
+        #     params2 = params[j]
+        #     buffers2 = buffers[j]
+        #     newdicts.append(FunctionalFista.dictionary_update(params2, buffers2, batch, c2, learned_dict2))
+        # newdict = torch.stack(newdicts)
+        # ensemble.params["encoder"] = newdict
+        #num_nonzero = aux_buffer["c"].count_nonzero(dim=-1).float().mean(dim=-1)
 
         if cfg.use_wandb:
             log = {}
@@ -192,12 +212,24 @@ def ensemble_train_loop(ensemble, cfg, args, ensemble_name, sampler, dataset, pr
                 for k in losses.keys():
                     log[f"{ensemble_name}_{name}_{k}"] = losses[k][m].item()
 
-                log[f"{ensemble_name}_{name}_num_nonzero"] = num_nonzero[m].item()
+                #log[f"{ensemble_name}_{name}_num_nonzero"] = num_nonzero[m].item()
 
             run.log(log, commit=True)
 
         progress_counter.value = i
 
+def separate_tensors(param, max_slices):
+
+    separated_dicts = [{} for _ in range(max_slices)]
+
+    for key, tensor in param.items():
+        if tensor.size(0) != max_slices:
+            raise ValueError(f"Tensor {key} cannot be sliced into {max_slices} slices along dim=0")
+
+        for i in range(max_slices):
+            separated_dicts[i][key] = tensor[i]
+
+    return separated_dicts
 
 def unstacked_to_learned_dicts(ensemble, args, ensemble_hyperparams, buffer_hyperparams):
     unstacked = ensemble.unstack(device="cpu")

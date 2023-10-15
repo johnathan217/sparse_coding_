@@ -1,5 +1,5 @@
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
 from typing import List
 
@@ -17,11 +17,11 @@ class GenTestArgs(BaseArgs):
     skip_chunks: int = 0
     chunk_size_gb: float = 2.0
     dataset: str = "NeelNanda/pile-10k"
-    layers: List[int] = [2]
+    layers: List[int] = field(default_factory=lambda: [2])
     location: str = "residual"
     dataset_folder: str = "activation_data"
     layer_folder_fmt: str = "layer_{layer}"
-    device: str = "cuda:0"
+    device: str = "cuda"
 
 if __name__ == "__main__":
     args = GenTestArgs()
