@@ -5,7 +5,6 @@ import tqdm
 import torch
 import torchopt
 import numpy as np
-from burla import remote_parallel_map
 
 from autoencoders.sae_ensemble import FunctionalTiedSAE
 from autoencoders.ensemble import FunctionalEnsemble
