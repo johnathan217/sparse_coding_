@@ -105,6 +105,56 @@ class FunctionalFista(DictSignature):
 
         return l_reconstruction + l_l1 + l_bias_decay, (loss_data, aux_data)
 
+    @staticmethod
+    def dictionary_update(params, buffers, batch_centered, coeffs, learned_dict):
+        device = params["encoder"].device
+        coeffs_fista, res = FunctionalFista.fista(batch_centered, learned_dict, buffers["l1_alpha"], coeffs, 1, device, eta=None)
+        ACT_HISTORY_LEN = 300
+        buffers["hessian_diag"] = buffers["hessian_diag"].mul((ACT_HISTORY_LEN - 1.0) / ACT_HISTORY_LEN ) + torch.pow(coeffs_fista, 2).mean(0) / ACT_HISTORY_LEN
+
+        return FunctionalFista.quadraticBasisUpdate(learned_dict, res, coeffs_fista, 0.001, buffers["hessian_diag"])
+
+    @staticmethod
+    def fista(batch, learned_dict, l1_coef, coefficients, num_iter, device, eta=None):
+        # shapes: batch = (b_size, h_dim), learned_dict = (dict_size, h_dim), coefficients = (b_size, dict_size)
+        dtype = batch.dtype
+        # batch_size = batch.size(0)
+        # M = learned_dict.size(0)
+        if eta is None:
+            eigenvalues = torch.linalg.eigvalsh(learned_dict @ learned_dict.T)
+            eta = 1.0 / eigenvalues.max().to(dtype)
+        # eta = torch.tensor(eta, dtype=torch.float32).to(device)
+
+        tk_n = 1.
+        tk = 1.
+
+        ahat = coefficients
+        # print("ahat dtype 1:", ahat.dtype)
+        ahat_y = coefficients
+
+        for t in range(num_iter):
+            tk = tk_n
+            tk_n = (1 + np.sqrt(1 + 4 * tk ** 2)) / 2
+            ahat_pre = ahat
+            Res = batch - torch.mm(ahat_y, learned_dict)
+            ahat_y = ahat_y.add(eta * torch.mm(Res, learned_dict.t()))
+            ahat = ahat_y.sub(eta * l1_coef).clamp(min=0.)
+            ahat_y = ahat.add(ahat.sub(ahat_pre).mul((tk - 1) / (tk_n)))
+            # should probably figure out what changes ahat's dtype instead of just changing it here but whatever
+            ahat = ahat.to(dtype)
+        Res = batch - torch.mm(ahat, learned_dict)
+        # Res is the residual, the difference between reconstructed and original data. ahat is the coefficients.
+        return ahat, Res
+
+    @staticmethod
+    def quadraticBasisUpdate(learned_dict, Res, ahat, lowestActivation, HessianDiag, stepSize = 0.001, Noneg = False):
+        dBasis = stepSize * torch.mm(Res.t(), ahat) / ahat.size(0)
+        dBasis = dBasis / (HessianDiag + lowestActivation)
+        learned_dict = learned_dict + (dBasis.t())
+        if Noneg:
+            learned_dict = learned_dict.clamp(min=0.)
+        learned_dict = learned_dict / (learned_dict.norm(2, 0))
+        return learned_dict
 
     @staticmethod
     def loss2(params, buffers, batch):
@@ -139,38 +189,6 @@ class FunctionalFista(DictSignature):
         return l_reconstruction + l_l1 + l_bias_decay, (loss_data, aux_data)
 
     @staticmethod
-    def dictionary_update(params, buffers, batch_centered, coeffs, learned_dict):
-        device = params["encoder"].device
-        coeffs_fista, res = FunctionalFista.fista(batch_centered, learned_dict, buffers["l1_alpha"], coeffs, 1, device, eta=None)
-        ACT_HISTORY_LEN = 300
-        buffers["hessian_diag"] = buffers["hessian_diag"].mul((ACT_HISTORY_LEN - 1.0) / ACT_HISTORY_LEN ) + torch.pow(coeffs_fista, 2).mean(0) / ACT_HISTORY_LEN
-
-        return FunctionalFista.quadraticBasisUpdate(learned_dict, res, coeffs_fista, 0.001, buffers["hessian_diag"])
-
-
-
-
-        # #Fista component of loss function
-        # c_fista, res = FunctionalFista.fista(batch_centered, learned_dict, buffers["l1_alpha"], c, 50, device, eta=None)
-        # l_reconstruction_fista = res.pow(2).mean()
-        #
-        # overall_reconstruction = l_reconstruction + l_reconstruction_fista
-        #
-        # loss_data = {
-        #     "loss": overall_reconstruction + l_l1 + l_bias_decay,
-        #     "autoencoder_reconstruction": l_reconstruction,
-        #     "fista_reconstruction": l_reconstruction_fista,
-        #     "l_l1": l_l1,
-        # }
-        #
-        # aux_data = {
-        #     "c": c,
-        #     "c_fista": c_fista,
-        # }
-        #
-        # return overall_reconstruction + l_l1 + l_bias_decay, (loss_data, aux_data)
-
-    @staticmethod
     def fista_loss(params, buffers, batch, c):
         decoder_norms = torch.norm(params["encoder"], 2, dim=-1)
         learned_dict = params["encoder"] / torch.clamp(decoder_norms, 1e-8)[:, None]
@@ -183,48 +201,26 @@ class FunctionalFista(DictSignature):
 
         return l_reconstruction, ({"loss": l_reconstruction}, {"c_fista": c_fista})
 
-    @staticmethod
-    def fista(batch, learned_dict, l1_coef, coefficients, num_iter, device, eta=None):
-        # shapes: batch = (b_size, h_dim), learned_dict = (dict_size, h_dim), coefficients = (b_size, dict_size)
-        dtype = batch.dtype
-        # batch_size = batch.size(0)
-        # M = learned_dict.size(0)
-        if eta is None:
-            eigenvalues = torch.linalg.eigvalsh(learned_dict @ learned_dict.T)
-            eta = 1.0 / eigenvalues.max().to(dtype)
-        # eta = torch.tensor(eta, dtype=torch.float32).to(device)
+    # #Fista component of loss function
+    # c_fista, res = FunctionalFista.fista(batch_centered, learned_dict, buffers["l1_alpha"], c, 50, device, eta=None)
+    # l_reconstruction_fista = res.pow(2).mean()
+    #
+    # overall_reconstruction = l_reconstruction + l_reconstruction_fista
+    #
+    # loss_data = {
+    #     "loss": overall_reconstruction + l_l1 + l_bias_decay,
+    #     "autoencoder_reconstruction": l_reconstruction,
+    #     "fista_reconstruction": l_reconstruction_fista,
+    #     "l_l1": l_l1,
+    # }
+    #
+    # aux_data = {
+    #     "c": c,
+    #     "c_fista": c_fista,
+    # }
+    #
+    # return overall_reconstruction + l_l1 + l_bias_decay, (loss_data, aux_data)
 
-        tk_n = 1.
-        tk = 1.
-
-        ahat = coefficients
-        # print("ahat dtype 1:", ahat.dtype)
-        ahat_y = coefficients
-
-        for t in range(num_iter):
-            tk = tk_n
-            tk_n = (1 + np.sqrt(1 + 4 * tk ** 2)) / 2
-            ahat_pre = ahat
-            Res = batch - torch.mm(ahat_y, learned_dict)
-            ahat_y = ahat_y.add(eta * torch.mm(Res, learned_dict.t()))
-            ahat = ahat_y.sub(eta * l1_coef).clamp(min=0.)
-            ahat_y = ahat.add(ahat.sub(ahat_pre).mul((tk - 1) / (tk_n)))
-            # should probably figure out what changes ahat's dtype instead of just changing it here but whatever
-            ahat = ahat.to(dtype)
-        Res = batch - torch.mm(ahat, learned_dict)
-        # Res is the residual, the difference between reconstructed and original data. ahat is the coefficients.
-        return ahat, Res
-
-
-    @staticmethod
-    def quadraticBasisUpdate(learned_dict, Res, ahat, lowestActivation, HessianDiag, stepSize = 0.001, Noneg = False):
-        dBasis = stepSize * torch.mm(Res.t(), ahat) / ahat.size(0)
-        dBasis = dBasis / (HessianDiag + lowestActivation)
-        learned_dict = learned_dict + (dBasis.t())
-        if Noneg:
-            learned_dict = learned_dict.clamp(min=0.)
-        learned_dict = learned_dict / (learned_dict.norm(2, 0))
-        return learned_dict
 
 class Fista(LearnedDict):
     def __init__(self, encoder, encoder_bias, centering=(None, None, None), norm_encoder=False):

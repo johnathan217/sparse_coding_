@@ -5,7 +5,7 @@ import tqdm
 import torch
 import torchopt
 import numpy as np
-
+from burla import remote_parallel_map
 
 from autoencoders.sae_ensemble import FunctionalTiedSAE
 from autoencoders.ensemble import FunctionalEnsemble
@@ -128,8 +128,8 @@ class SweepArgs(EnsembleArgs):
     n_repetitions: int = 1
     save_after_every: bool = False
     adam_lr: float = 1e-3
-    
-    
+
+
 
 if __name__ == "__main__":
     args = SweepArgs()
