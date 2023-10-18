@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 import os
+import time
+
 import tqdm
 
 import torch
@@ -66,9 +68,9 @@ def basic_l1_sweep(
 
     print(f"Initializing {len(l1_values)} models with latent dimension {latent_dim}...")
 
-    models = [FunctionalTiedSAE.init(activation_dim, latent_dim, l1, device=device) for l1 in l1_values]
+    models = [FunctionalFista.init(activation_dim, latent_dim, l1, device=device) for l1 in l1_values]
     ensemble = FunctionalEnsemble(
-        models, FunctionalTiedSAE,
+        models, FunctionalFista,
         torchopt.adam, adam_kwargs,
         device=device
     )
@@ -116,16 +118,21 @@ def basic_l1_sweep(
             torch.save(learned_dicts, os.path.join(output_dir, f"learned_dicts_epoch_{epoch_idx}.pt"))
 
 
+    time.sleep(600)
+
+    os.system("rundll32.exe powrprof.dll,SetSuspendState 0,1,0")
+
+
 @dataclass
 class SweepArgs(EnsembleArgs):
     dataset_dir: str = "activation_data/layer_2"
-    output_dir: str = "output_basic_test/normal_13_10_2023_iterative_set"
+    output_dir: str = "output_basic_test/fista300steps_17_10_2023_iterative_set"
     l1_value_min: float = -4
     l1_value_max: float = -2
-    l1_value_n: int = 8
+    l1_value_n: int = 4
     ratio: float = 1.0
     n_repetitions: int = 1
-    save_after_every: bool = False
+    save_after_every: bool = True
     adam_lr: float = 1e-3
 
 

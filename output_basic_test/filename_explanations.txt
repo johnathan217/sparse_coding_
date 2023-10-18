@@ -1,0 +1,9 @@
+fista300steps_17_10_2023_iterative_set
+ - this one uses 300 steps of fista, and does the fista optimisation then dictionary update outside of the step batch function. Iterative set means more than one dictionary was trained at once - here was used a variety of l1 values for the autoencoder
+
+normal_13_10_2023_iterative_set
+ - this is the default autoencoder with a variety of l1 values
+
+fista_13_10_2023_iterative_set
+ - this uses around 50 fista steps, and has fista built in to the autoencoder loss function (does not use the dictionary update). The loss function tries to adjust the autoencoder weights such that the reconstruction using the fista coefficients is minimised, as well as the reconstruction using the coefficients produced by passing the input through the autoencoder. 
+

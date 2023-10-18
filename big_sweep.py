@@ -170,25 +170,36 @@ def ensemble_train_loop(ensemble, cfg, args, ensemble_name, sampler, dataset, pr
         batch = dataset[batch_idxs].to(args["device"])
 
         losses, aux_buffer = ensemble.step_batch(batch)
-        # Do fista optimisation here
-        # params = ensemble.params
-        # buffers = ensemble.buffers
-        # c = aux_buffer["c"].squeeze(0).to(dtype)
-        # decoder_norms = torch.norm(params["encoder"], 2, dim=-1)
-        # learned_dict = params["encoder"] / torch.clamp(decoder_norms, 1e-8)[:, None]
-        # learned_dict = learned_dict.squeeze(0).to(dtype)
-        # newdicts = []
-        # params = separate_tensors(params, c.size(0))
-        # buffers = separate_tensors(buffers, c.size(0))
-        # for j in range(c.size(0)):
-        #     c2 = c[j]
-        #     learned_dict2 = learned_dict[j]
-        #     params2 = params[j]
-        #     buffers2 = buffers[j]
-        #     newdicts.append(FunctionalFista.dictionary_update(params2, buffers2, batch, c2, learned_dict2))
-        # newdict = torch.stack(newdicts)
-        # ensemble.params["encoder"] = newdict
-        #num_nonzero = aux_buffer["c"].count_nonzero(dim=-1).float().mean(dim=-1)
+
+        loss = float('inf')
+
+        #Do fista optimisation here
+        params = ensemble.params
+        buffers = ensemble.buffers
+        c = aux_buffer["c"].squeeze(0).to(dtype)
+        decoder_norms = torch.norm(params["decoder"], 2, dim=-1)
+        learned_dict = params["decoder"] / torch.clamp(decoder_norms, 1e-8)[:, None]
+        learned_dict = learned_dict.squeeze(0).to(dtype)
+        newdicts = []
+        loss_list = []
+        params = separate_tensors(params, c.size(0))
+        buffers = separate_tensors(buffers, c.size(0))
+        for j in range(c.size(0)):
+            c2 = c[j]
+            learned_dict2 = learned_dict[j]
+            params2 = params[j]
+            buffers2 = buffers[j]
+            dict, _ = (FunctionalFista.dictionary_update(params2, buffers2, batch, c2, learned_dict2))
+            # loss = res.pow(2).mean()
+            newdicts.append(dict)
+            # loss_list.append(loss)
+        newdict = torch.stack(newdicts)
+        # loss = torch.mean(torch.stack(loss_list))
+        ensemble.params["decoder"] = newdict
+        # num_nonzero = aux_buffer["c"].count_nonzero(dim=-1).float().mean(dim=-1)
+
+        # if i % 2 == 0:
+        #     print("loss: ", round(loss.item(), 4))
 
         if cfg.use_wandb:
             log = {}
