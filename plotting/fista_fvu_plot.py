@@ -11,7 +11,6 @@ files = [
     ("SAE_ensemble", "D:/sparse_coding_/output_basic_test/normal_13_10_2023_iterative_set/learned_dicts_epoch_0.pt"),
     ("Fista", "D:/sparse_coding_/output_basic_test/fista_13_10_2023_iterative_set/learned_dicts_epoch_0.pt"),
     # ("Fista_iterative", "D:/sparse_coding_/output_basic_test/fista10_10_2023_iterative/learned_dicts_epoch_0.pt")
-    ("Fista300","D:/sparse_coding_/output_basic_test/fista300steps_17_10_2023_iterative_set/learned_dicts_epoch_0_chunk_0.pt" ),
 ("Fista300","D:/sparse_coding_/output_basic_test/fista300steps_17_10_2023_iterative_set/learned_dicts_epoch_0_chunk_7.pt" ),
 
     ]

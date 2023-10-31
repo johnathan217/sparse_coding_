@@ -267,6 +267,9 @@ def plot_scores(scores, settings, xlabel, ylabel, xrange, yrange, title, filenam
         if settings[label]["points"]:
             ax.scatter(x, y, c=c, cmap=cmap, norm=norm, marker=style, s=10)
 
+            for xi, yi, label_text in zip(x, y, y):
+                ax.text(xi, yi, str(label_text), fontsize=8, ha='right', va='bottom')
+
             legend_lines.append(
                 Line2D(
                     [0],
